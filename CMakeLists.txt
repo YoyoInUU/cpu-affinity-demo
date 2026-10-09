@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 3.16)
+project(cpu_affinity_demo VERSION 1.0.0 LANGUAGES CXX)
+
+if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "This project supports only Windows and Linux")
+endif()
+
+find_package(Threads REQUIRED)
+
+add_library(cpu_affinity STATIC src/cpu_affinity.cpp)
+target_include_directories(cpu_affinity PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_compile_features(cpu_affinity PUBLIC cxx_std_17)
+set_target_properties(cpu_affinity PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(cpu_affinity PUBLIC Threads::Threads)
+if(WIN32)
+    target_compile_definitions(cpu_affinity PRIVATE _WIN32_WINNT=0x0601)
+else()
+    target_compile_definitions(cpu_affinity PRIVATE _GNU_SOURCE)
+endif()
+
+add_executable(cpu_affinity_demo main.cpp)
+target_link_libraries(cpu_affinity_demo PRIVATE cpu_affinity)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(test)
+endif()
+
+foreach(target cpu_affinity cpu_affinity_demo cpu_affinity_tests)
+    if(TARGET ${target})
+        if(MSVC)
+            target_compile_options(${target} PRIVATE /W4 /permissive-)
+        else()
+            target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
+endforeach()
