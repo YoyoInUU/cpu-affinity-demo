@@ -142,6 +142,7 @@ void run_workload(unsigned int seconds) {
     std::uint64_t checksum = 0x123456789abcdefULL;
     std::uint64_t iterations = 0;
     std::set<unsigned int> observed;
+    unsigned int previous_cpu = 0;
 
     do {
         // Unsigned xorshift arithmetic: defined overflow, a visible checksum,
@@ -153,7 +154,12 @@ void run_workload(unsigned int seconds) {
         }
 
         iterations += 4096;
-        observed.insert(cpu_affinity::current_cpu());
+        const auto cpu = cpu_affinity::current_cpu();
+        // Usually samples stay on the same CPU; avoid repeated tree lookups.
+        if (observed.empty() || cpu != previous_cpu) {
+            observed.insert(cpu);
+            previous_cpu = cpu;
+        }
     } while (Clock::now() < deadline);
 
     const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();

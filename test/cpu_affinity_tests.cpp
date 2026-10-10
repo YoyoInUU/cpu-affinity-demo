@@ -81,6 +81,19 @@ int main() {
             require(affinity::get_current_thread_affinity() == original, "Multi-CPU set failed");
             guard.restore();
         }},
+        {"accept an unsorted subset without modifying the input", [&] {
+            affinity::CpuList cpus{original.back()};
+            if (original.size() > 1) {
+                cpus.push_back(original.front());
+            }
+            const auto input = cpus;
+            auto expected = cpus;
+            std::sort(expected.begin(), expected.end());
+            affinity::ScopedAffinity guard(cpus);
+            require(cpus == input, "CPU list was modified");
+            require(affinity::get_current_thread_affinity() == expected, "Subset pin failed");
+            guard.restore();
+        }},
         {"restore during exception unwinding", [&] {
             require_throws<std::runtime_error>([&] {
                 affinity::ScopedAffinity guard(one_cpu);
@@ -111,8 +124,17 @@ int main() {
             require_throws<std::invalid_argument>([&] {
                 affinity::set_current_thread_affinity({one_cpu.front(), one_cpu.front()});
             });
+            require_throws<std::invalid_argument>([&] {
+                auto duplicates = original;
+                duplicates.push_back(original.front());
+                affinity::set_current_thread_affinity(duplicates);
+            });
             require_throws<std::invalid_argument>([] {
                 affinity::set_current_thread_affinity({std::numeric_limits<unsigned int>::max()});
+            });
+            require_throws<std::invalid_argument>([&] {
+                affinity::set_current_thread_affinity(
+                    {std::numeric_limits<unsigned int>::max(), one_cpu.front()});
             });
             require(affinity::get_current_thread_affinity() == original, "Invalid input changed affinity");
         }},

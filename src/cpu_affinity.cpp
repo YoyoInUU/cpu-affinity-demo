@@ -21,7 +21,6 @@
 
 #include "cpu_affinity.hpp"
 
-#include <algorithm>
 #include <cerrno>
 #include <climits>
 #include <limits>
@@ -31,18 +30,6 @@
 
 namespace cpu_affinity {
 namespace {
-
-CpuList validate_list(const CpuList& cpus) {
-    if (cpus.empty()) {
-        throw std::invalid_argument("CPU affinity must contain at least one CPU");
-    }
-    CpuList sorted = cpus;
-    std::sort(sorted.begin(), sorted.end());
-    if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
-        throw std::invalid_argument("CPU affinity must not contain duplicate IDs");
-    }
-    return sorted;
-}
 
 #if defined(_WIN32)
 
@@ -132,27 +119,39 @@ CpuList get_current_thread_affinity() {
 }
 
 void set_current_thread_affinity(const CpuList& cpus) {
-    const auto sorted = validate_list(cpus);
+    if (cpus.empty()) {
+        throw std::invalid_argument("CPU affinity must contain at least one CPU");
+    }
+    // Validate while building the mask: no list copy or sorting is needed.
+    // Only apply the mask after every ID has passed validation.
 #if defined(_WIN32)
     check_windows_topology();
-    if (sorted.back() >= GetActiveProcessorCount(0)) {
-        throw std::invalid_argument("CPU ID is outside the active processor group");
-    }
+    const auto cpu_count = GetActiveProcessorCount(0);
     GROUP_AFFINITY mask{};
     mask.Group = 0;
-    for (const auto cpu : sorted) {
-        mask.Mask |= KAFFINITY{1} << cpu;
+    for (const auto cpu : cpus) {
+        if (cpu >= cpu_count || cpu >= std::numeric_limits<KAFFINITY>::digits) {
+            throw std::invalid_argument("CPU ID is outside the active processor group");
+        }
+        const auto bit = KAFFINITY{1} << cpu;
+        if ((mask.Mask & bit) != 0) {
+            throw std::invalid_argument("CPU affinity must not contain duplicate IDs");
+        }
+        mask.Mask |= bit;
     }
     if (!SetThreadGroupAffinity(GetCurrentThread(), &mask, nullptr)) {
         throw_windows_error("SetThreadGroupAffinity");
     }
 #else
     auto mask = read_native_affinity();
-    if (sorted.back() >= mask.size * CHAR_BIT) {
-        throw std::invalid_argument("CPU ID is outside the kernel affinity mask");
-    }
     CPU_ZERO_S(mask.size, mask.data.get());
-    for (const auto cpu : sorted) {
+    for (const auto cpu : cpus) {
+        if (cpu >= mask.size * CHAR_BIT) {
+            throw std::invalid_argument("CPU ID is outside the kernel affinity mask");
+        }
+        if (CPU_ISSET_S(cpu, mask.size, mask.data.get())) {
+            throw std::invalid_argument("CPU affinity must not contain duplicate IDs");
+        }
         CPU_SET_S(cpu, mask.size, mask.data.get());
     }
     if (sched_setaffinity(0, mask.size, mask.data.get()) != 0) {

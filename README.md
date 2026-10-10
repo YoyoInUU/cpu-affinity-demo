@@ -28,6 +28,8 @@ The demo uses one thread: it queries the original affinity, applies the selected
 - **Windows:** Uses `GetThreadGroupAffinity()` and `SetThreadGroupAffinity()` within a single processor group, with a mask that fits the executable's native bit width.
 - **Linux:** Uses `sched_getaffinity(0, ...)` and `sched_setaffinity(0, ...)` for the calling thread, with dynamically sized CPU masks.
 
+The library validates CPU IDs while building the native affinity mask, avoiding a temporary copy and sort of the input list. The workload still samples the current CPU after each iteration chunk, but skips repeated set lookups when consecutive samples report the same CPU.
+
 ### Compilation
 
 **File Structure**
@@ -196,7 +198,7 @@ ctest --test-dir build/mingw --output-on-failure
 ctest --test-dir build/msvc -C Release --output-on-failure
 ```
 
-Tests cover affinity queries, single-CPU binding, multi-CPU lists, nested guards, restoration during exception unwinding, invalid input, worker isolation, and rejection of cross-thread restoration. CTest also checks CLI argument validation.
+Tests cover affinity queries, single-CPU binding, unsorted multi-CPU lists and subsets, input-list preservation, nested guards, restoration during exception unwinding, worker isolation, and rejection of cross-thread restoration. Invalid-input tests include empty lists, adjacent and nonadjacent duplicate IDs, and out-of-range IDs in unsorted lists, and verify that affinity remains unchanged. CTest also checks CLI argument validation.
 
 To build without tests, add `-DBUILD_TESTING=OFF` during configuration.
 
